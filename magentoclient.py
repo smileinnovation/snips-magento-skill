@@ -50,10 +50,7 @@ class MagentoClient:
             url=self.__build_url(GET_CART_URI),
             headers=self.__auth_header()
         )
-        return map(lambda item:
-                    (item['name'], item['qty']),
-                    cart_response.json()
-                   )
+        return map(lambda item: (item['name'].encode('utf-8'), item['qty']), cart_response.json())
 
 
 

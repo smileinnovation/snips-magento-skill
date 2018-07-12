@@ -113,7 +113,7 @@ class MagentoSkill:
         else:
             print items
             item_str = self.build_item_sequence(items, MagentoSkill.__default_item_renaming)
-            hermes.publish_end_session(intent_message.session_id, self.messages('inYourCart').format(item_str))
+            hermes.publish_end_session(intent_message.session_id, self.messages.get('inYourCart').format(item_str))
 
     def order_status(self, hermes, intent_message):
         hermes.publish_end_session(intent_message.session_id, "Je ne vois aucune commande pour le moment")
