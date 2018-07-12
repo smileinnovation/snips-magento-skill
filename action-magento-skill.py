@@ -3,6 +3,8 @@
 
 from hermes_python.hermes import Hermes
 from message import Message
+from magentoclient import MagentoClient, MagentoClientError
+from config_parser import SnipsConfigParser
 
 MQTT_IP_ADDR = "localhost"
 MQTT_PORT = 1883
@@ -36,6 +38,7 @@ SKILL_MESSAGES = {
         'addItemConfirmation': "Je vous propose d'ajouter {}. C'est bien ça ?",
         'itemAdded': "Voilà, c'est enregistré",
         'itemNotAdded': "Pas de problème, je n'ai rien ajouter",
+        'inYourCart': "J'ai trouvé ceci dans votre panier: {}",
         'cahier': "cahier de 96 pages",
         'encre': "paquet de cartouches d'encre noire"
     }
@@ -45,9 +48,14 @@ ACTION_ADDITEMS = "__add_items"
 
 
 class MagentoSkill:
-    def __init__(self):
+    def __init__(self, magento_client):
         self.messages = Message(SKILL_MESSAGES, 'fr')
         self.__current_add_items = []
+        self.__magento_client = magento_client
+
+    @staticmethod
+    def __default_item_renaming(item_name):
+        return item_name
 
     def build_items_array(self, items, quantities):
         items_with_quantities = []
@@ -57,8 +65,8 @@ class MagentoSkill:
 
         return items_with_quantities
 
-    def build_add_item_sentence(self, items_with_quantities):
-        items_list = map(lambda iq: "{} {}".format(iq[1], self.messages.get(iq[0])), items_with_quantities)
+    def build_item_sequence(self, items_with_quantities, item_renaming):
+        items_list = map(lambda iq: "{} {}".format(iq[1], item_renaming(iq[0])), items_with_quantities)
         _and = self.messages.get('and')
 
         if len(items_list) > 1:
@@ -69,6 +77,14 @@ class MagentoSkill:
         else:
             items_str = items_list[0]
 
+        return items_str
+
+    def build_add_item_sentence(self, items_with_quantities):
+
+        def item_renaming(item_name):
+            return self.messages.get(item_name)
+
+        items_str = self.build_item_sequence(items_with_quantities, item_renaming)
         return self.messages.get('addItemConfirmation').format(items_str)
 
     def add_item(self, hermes, intent_message):
@@ -87,7 +103,17 @@ class MagentoSkill:
         hermes.publish_start_session_action('default', self.build_add_item_sentence(items_with_quantities), YES_NO, True, custom_data=ACTION_ADDITEMS)
 
     def list_cart_items(self, hermes, intent_message):
-        hermes.publish_end_session(intent_message.session_id, "Je ne vois rien dans votre panier pour le moment")
+
+        items = self.__magento_client.get_cart()
+
+        if len(items) == 0:
+            hermes.publish_end_session(intent_message.session_id, "Je ne vois rien dans votre panier pour le moment")
+        elif len(items) > 10:
+            hermes.publish_end_session(intent_message.session_id, "Il y a trop de chose dans votre panier")
+        else:
+            print items
+            item_str = self.build_item_sequence(items, MagentoSkill.__default_item_renaming)
+            hermes.publish_end_session(intent_message.session_id, self.messages('inYourCart').format(item_str))
 
     def order_status(self, hermes, intent_message):
         hermes.publish_end_session(intent_message.session_id, "Je ne vois aucune commande pour le moment")
@@ -113,7 +139,6 @@ class MagentoSkill:
             self.__current_add_items = []
             hermes.publish_end_session(intent_message.session_id, self.messages.get('itemNotAdded'))
 
-
     def start(self):
         with Hermes(MQTT_ADDR) as h:
             h \
@@ -127,5 +152,29 @@ class MagentoSkill:
 
 
 if __name__ == "__main__":
-    magentoSkill = MagentoSkill()
-    magentoSkill.start()
+    try:
+        config = SnipsConfigParser.read_configuration_file('config.ini')
+
+        if config['secret'] is not None:
+            magento_host = config['secret']['magento_host']
+            magento_user = config['secret']['magento_user']
+            magento_password = config['secret']['magento_password']
+
+            if magento_host is not None and magento_user is not None and magento_password is not None:
+                magento_client = MagentoClient(host=magento_host, login=magento_user, password=magento_password)
+                magentoSkill = MagentoSkill(magento_client)
+                magentoSkill.start()
+
+            else:
+                print "Invalid configuration file (magento connection information are missing)."
+
+        else:
+            print "Invalid configuration file (magento connection information are missing)."
+
+    except MagentoClientError as magento_error:
+        print "{}: {}".format(magento_error.status_code, magento_error.message)
+    except KeyError as ke:
+        print "Configuration error with this key: {}".format(ke.message)
+    except Exception as e:
+        print repr(e)
+        print e.message
