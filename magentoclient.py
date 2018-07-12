@@ -51,15 +51,28 @@ class MagentoClient:
             url=self.__build_url(GET_CART_ITEM_URI),
             headers=self.__auth_header()
         )
-        return map(lambda item: (item['name'].encode('utf-8'), item['qty']), items_response.json())
+        return map(lambda item: (item['sku'], item['qty'], item['name'].encode('utf-8')), items_response.json())
 
-    def add_item(self):
+    def add_items(self, items):
+
         cart_response = requests.get(
             url=self.__build_url(GET_CART_URI),
             headers=self.__auth_header()
         )
+        quote_id = MagentoClient.__process_response(cart_response)['id']
 
-        print cart_response.json()
+        payload = map(lambda i: { 'quote_id': quote_id, 'sku': i[2], 'qty': i[1] }, items)
+
+        ### Still in progress ... Magento API is strange....
+        add_item_response = requests.post(
+            url=self.__build_url(ADD_TO_CART_URI),
+            headers=self.__auth_header(),
+            json={ 'cartItem': payload[0] }
+        )
+
+        print add_item_response.status_code
+        return MagentoClient.__process_response(add_item_response)
+
 
 
 

@@ -42,12 +42,32 @@ SKILL_MESSAGES = {
         'emptyCart': "Je ne vois rien dans votre panier pour le moment",
         'tooBigCart' : "Il y a plus de 10 articles dans votre paniers",
         'cahier': "cahier de 96 pages",
-        'encre': "paquet de cartouches d'encre noire"
+        'protegecahier': "Protège-cahier transparent vert",
+        'encre': "étui de 24 cartouches d'encre noire",
+        'stylo': "Stylo bille noire",
+        'unknown_product': "produit que je ne connais pas"
     }
 }
 
-ACTION_ADDITEMS = "__add_items"
+PRODUCTS = {
+    '3329680637410': 'cahier',
+    '3086126732343': 'encre',
+    '0073228109695': 'stylo',
+    '3210330734057': 'protegecahier'
+}
 
+ACTION_ADD_ITEMS = "__add_items"
+
+
+def _product_sku_by_name(name):
+    return PRODUCTS.keys()[PRODUCTS.values().index(name)]
+
+
+def _product_name_by_sku(sku):
+    try:
+        return PRODUCTS[sku]
+    except KeyError:
+        return None
 
 class MagentoSkill:
     def __init__(self, magento_client):
@@ -55,17 +75,20 @@ class MagentoSkill:
         self.__current_add_items = []
         self.__magento_client = magento_client
 
-    @staticmethod
-    def __default_item_renaming(item_name):
-        return item_name
+    def __sku_to_message(self, sku):
+        product_name = _product_name_by_sku(sku)
+        if product_name is not None:
+            return self.messages.get(product_name)
+        else:
+            return self.messages.get('unknown_product')
 
     def build_items_array(self, items, quantities):
-        items_with_quantities = []
+        items_with_quantities_and_sku = []
         for i in range(0, len(items)):
             q = quantities[i].value if i < len(quantities) else 1.0
-            items_with_quantities.append((items[i].value, int(q)))
+            items_with_quantities_and_sku.append((items[i].value, int(q), _product_sku_by_name(items[i].value)))
 
-        return items_with_quantities
+        return items_with_quantities_and_sku
 
     def build_item_sequence(self, items_with_quantities, item_renaming):
         items_list = map(lambda iq: "{} {}".format(iq[1], item_renaming(iq[0])), items_with_quantities)
@@ -99,11 +122,9 @@ class MagentoSkill:
         if intent_message.slots.quantity:
             quantities = intent_message.slots.quantity.all()
 
-        items_with_quantities = self.build_items_array(items, quantities)
-        self.__current_add_items = items_with_quantities
-        self.__magento_client.add_item()
+        self.__current_add_items = self.build_items_array(items, quantities)
         hermes.publish_end_session(intent_message.session_id, self.messages.get('lookingForPastOrder'))
-        hermes.publish_start_session_action('default', self.build_add_item_sentence(items_with_quantities), YES_NO, True, custom_data=ACTION_ADDITEMS)
+        hermes.publish_start_session_action('default', self.build_add_item_sentence(self.__current_add_items), YES_NO, True, custom_data=ACTION_ADD_ITEMS)
 
     def list_cart_items(self, hermes, intent_message):
 
@@ -114,7 +135,7 @@ class MagentoSkill:
         elif len(items) > 10:
             hermes.publish_end_session(intent_message.session_id, self.messages.get('tooBigCart'))
         else:
-            item_str = self.build_item_sequence(items, MagentoSkill.__default_item_renaming)
+            item_str = self.build_item_sequence(items, self.__sku_to_message)
             hermes.publish_end_session(intent_message.session_id, self.messages.get('inYourCart').format(len(items), item_str))
 
     def order_status(self, hermes, intent_message):
@@ -131,13 +152,14 @@ class MagentoSkill:
 
     def yes(self, hermes, intent_message):
 
-        if intent_message.custom_data == ACTION_ADDITEMS:
+        if intent_message.custom_data == ACTION_ADD_ITEMS:
+            self.__magento_client.add_items(self.__current_add_items)
             self.__current_add_items = []
             hermes.publish_end_session(intent_message.session_id, self.messages.get('itemAdded'))
 
     def no(self, hermes, intent_message):
 
-        if intent_message.custom_data == ACTION_ADDITEMS:
+        if intent_message.custom_data == ACTION_ADD_ITEMS:
             self.__current_add_items = []
             hermes.publish_end_session(intent_message.session_id, self.messages.get('itemNotAdded'))
 
