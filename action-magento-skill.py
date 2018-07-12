@@ -38,7 +38,9 @@ SKILL_MESSAGES = {
         'addItemConfirmation': "Je vous propose d'ajouter {}. C'est bien ça ?",
         'itemAdded': "Voilà, c'est enregistré",
         'itemNotAdded': "Pas de problème, je n'ai rien ajouter",
-        'inYourCart': "J'ai trouvé ceci dans votre panier: {}",
+        'inYourCart': "J'ai trouvé {} article dans votre panier: {}",
+        'emptyCart': "Je ne vois rien dans votre panier pour le moment",
+        'tooBigCart' : "Il y a plus de 10 articles dans votre paniers",
         'cahier': "cahier de 96 pages",
         'encre': "paquet de cartouches d'encre noire"
     }
@@ -99,21 +101,21 @@ class MagentoSkill:
 
         items_with_quantities = self.build_items_array(items, quantities)
         self.__current_add_items = items_with_quantities
+        self.__magento_client.add_item()
         hermes.publish_end_session(intent_message.session_id, self.messages.get('lookingForPastOrder'))
         hermes.publish_start_session_action('default', self.build_add_item_sentence(items_with_quantities), YES_NO, True, custom_data=ACTION_ADDITEMS)
 
     def list_cart_items(self, hermes, intent_message):
 
-        items = self.__magento_client.get_cart()
+        items = self.__magento_client.get_cart_items()
 
         if len(items) == 0:
-            hermes.publish_end_session(intent_message.session_id, "Je ne vois rien dans votre panier pour le moment")
+            hermes.publish_end_session(intent_message.session_id, self.messages.get('emptyCart'))
         elif len(items) > 10:
-            hermes.publish_end_session(intent_message.session_id, "Il y a trop de chose dans votre panier")
+            hermes.publish_end_session(intent_message.session_id, self.messages.get('tooBigCart'))
         else:
-            print items
             item_str = self.build_item_sequence(items, MagentoSkill.__default_item_renaming)
-            hermes.publish_end_session(intent_message.session_id, self.messages.get('inYourCart').format(item_str))
+            hermes.publish_end_session(intent_message.session_id, self.messages.get('inYourCart').format(len(items), item_str))
 
     def order_status(self, hermes, intent_message):
         hermes.publish_end_session(intent_message.session_id, "Je ne vois aucune commande pour le moment")

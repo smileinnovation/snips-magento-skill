@@ -2,7 +2,8 @@ import requests
 import json
 
 CLIENT_TOKEN_URI = "rest/V1/integration/customer/token"
-GET_CART_URI = "rest/default/V1/carts/mine/items"
+GET_CART_URI = "rest/default/V1/carts/mine"
+GET_CART_ITEM_URI = "rest/default/V1/carts/mine/items"
 ADD_TO_CART_URI = "rest/default/V1/carts/mine/items"
 
 
@@ -45,12 +46,20 @@ class MagentoClient:
 
         return MagentoClient.__process_response(token_response)
 
-    def get_cart(self):
+    def get_cart_items(self):
+        items_response = requests.get(
+            url=self.__build_url(GET_CART_ITEM_URI),
+            headers=self.__auth_header()
+        )
+        return map(lambda item: (item['name'].encode('utf-8'), item['qty']), items_response.json())
+
+    def add_item(self):
         cart_response = requests.get(
             url=self.__build_url(GET_CART_URI),
             headers=self.__auth_header()
         )
-        return map(lambda item: (item['name'].encode('utf-8'), item['qty']), cart_response.json())
+
+        print cart_response.json()
 
 
 
