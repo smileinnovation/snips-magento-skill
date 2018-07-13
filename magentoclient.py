@@ -1,10 +1,35 @@
 import requests
-import json
+import time
 
 CLIENT_TOKEN_URI = "rest/V1/integration/customer/token"
 GET_CART_URI = "rest/default/V1/carts/mine"
 GET_CART_ITEM_URI = "rest/default/V1/carts/mine/items"
 ADD_TO_CART_URI = "rest/default/V1/carts/mine/items"
+
+
+def __magento_client__(retry_interval=1, max_retry=1, fallback_return=None):
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+
+            retry = 0
+            while max_retry == 0 or (max_retry > 0 and retry < max_retry):
+                try:
+                    print "action!"
+                    return func(self, *args, **kwargs)
+                except MagentoClientError as mce:
+                    if mce.status_code == 401:
+                        print "401 catched"
+                        self._MagentoClient__get_client_token()
+                    time.sleep(retry_interval)
+                    retry += 1 if max_retry > 0 else 0
+                    continue
+
+            if fallback_return is not None:
+                return fallback_return
+
+        return wrapper
+
+    return decorator
 
 
 class MagentoClientError(Exception):
@@ -13,19 +38,29 @@ class MagentoClientError(Exception):
         self.status_code = status_code
 
 
+class MagentoStockIssueError(Exception):
+    def __init__(self, message, status_code, item):
+        super(MagentoStockIssueError, self).__init__(message)
+        self.status_code = status_code
+        self.item = item
+
+
 class MagentoClient:
     def __init__(self, host, login, password):
         self.__host = host
         self.__login = login
         self.__password = password
-        self.__current_token = self.__get_client_token()
+        self.__get_client_token()
 
     @staticmethod
-    def __process_response(response):
+    def __process_response(response, item=""):
         if response.status_code == 200:
             return response.json()
         elif response.status_code == 401:
             raise MagentoClientError(message=response.json()['message'], status_code=response.status_code)
+        elif response.status_code == 400:
+            if response.json()['message'] and response.json()['message'].encode('utf-8').startswith("We don't have as many"):
+                raise MagentoStockIssueError(message=response.json()['message'], status_code=response.status_code, item=item)
         else:
             raise MagentoClientError(message="Something went wrong with Magento: {}".format(response.content), status_code=response.status_code)
 
@@ -43,16 +78,17 @@ class MagentoClient:
                 'password': self.__password
             }
         )
+        self.__current_token = MagentoClient.__process_response(token_response)
 
-        return MagentoClient.__process_response(token_response)
-
+    @__magento_client__(max_retry=3, fallback_return=[])
     def get_cart_items(self):
-        items_response = requests.get(
+        items_response = MagentoClient.__process_response(requests.get(
             url=self.__build_url(GET_CART_ITEM_URI),
             headers=self.__auth_header()
-        )
-        return map(lambda item: (item['sku'], item['qty'], item['name'].encode('utf-8')), items_response.json())
+        ))
+        return map(lambda item: (item['sku'], item['qty'], item['name'].encode('utf-8')), items_response)
 
+    @__magento_client__(max_retry=3, fallback_return=0)
     def add_items(self, items):
 
         cart_response = requests.get(
@@ -61,17 +97,23 @@ class MagentoClient:
         )
         quote_id = MagentoClient.__process_response(cart_response)['id']
 
-        payload = map(lambda i: { 'quote_id': quote_id, 'sku': i[2], 'qty': i[1] }, items)
+        magento_items = map(lambda i: { 'quote_id': quote_id, 'sku': i[2], 'qty': i[1] }, items)
 
-        ### Still in progress ... Magento API is strange....
-        add_item_response = requests.post(
-            url=self.__build_url(ADD_TO_CART_URI),
-            headers=self.__auth_header(),
-            json={ 'cartItem': payload[0] }
-        )
+        # Sor I did found any way to insert in bulk all different item...
+        # so I need to iterate and call the API for each of them
+        item_added = 0
+        for magento_item in magento_items:
+            result = MagentoClient.__process_response(requests.post(
+                url=self.__build_url(ADD_TO_CART_URI),
+                headers=self.__auth_header(),
+                json={ 'cartItem': magento_item }
+            ), item=magento_item['sku'])
+            item_added = item_added + 1
 
-        print add_item_response.status_code
-        return MagentoClient.__process_response(add_item_response)
+        return item_added
+
+
+
 
 
 

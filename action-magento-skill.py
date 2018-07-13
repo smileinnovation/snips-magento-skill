@@ -3,7 +3,7 @@
 
 from hermes_python.hermes import Hermes
 from message import Message
-from magentoclient import MagentoClient, MagentoClientError
+from magentoclient import MagentoClient, MagentoClientError, MagentoStockIssueError
 from config_parser import SnipsConfigParser
 
 MQTT_IP_ADDR = "localhost"
@@ -36,8 +36,10 @@ SKILL_MESSAGES = {
         'and': " et ",
         'lookingForPastOrder': "Je recherche dans votre historique d'achat.",
         'addItemConfirmation': "Je vous propose d'ajouter {}. C'est bien ça ?",
-        'itemAdded': "Voilà, c'est enregistré",
+        'itemAdded': "Voilà l'article est enregistré",
+        'itemsAdded': "Voilà les {} articles sont enregistré",
         'itemNotAdded': "Pas de problème, je n'ai rien ajouter",
+        'noEnoughItem': "Désolé mais pour l'article {}, le stock n'est pas suffisant pour la quantité que vous demandez",
         'inYourCart': "J'ai trouvé {} article dans votre panier: {}",
         'emptyCart': "Je ne vois rien dans votre panier pour le moment",
         'tooBigCart' : "Il y a plus de 10 articles dans votre paniers",
@@ -153,9 +155,16 @@ class MagentoSkill:
     def yes(self, hermes, intent_message):
 
         if intent_message.custom_data == ACTION_ADD_ITEMS:
-            self.__magento_client.add_items(self.__current_add_items)
-            self.__current_add_items = []
-            hermes.publish_end_session(intent_message.session_id, self.messages.get('itemAdded'))
+            try:
+                added = self.__magento_client.add_items(self.__current_add_items)
+                self.__current_add_items = []
+                if added > 1:
+                    hermes.publish_end_session(intent_message.session_id, self.messages.get('itemsAdded').format(added))
+                elif added > 0:
+                    hermes.publish_end_session(intent_message.session_id, self.messages.get('itemAdded'))
+            except MagentoStockIssueError as mce:
+                self.__current_add_items = []
+                hermes.publish_end_session(intent_message.session_id, self.messages.get('noEnoughItem').format(self.messages.get(_product_name_by_sku(mce.item))))
 
     def no(self, hermes, intent_message):
 
