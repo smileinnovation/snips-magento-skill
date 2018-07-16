@@ -7,6 +7,7 @@ GET_CART_ITEM_URI = "rest/default/V1/carts/mine/items"
 ADD_TO_CART_URI = "rest/default/V1/carts/mine/items"
 PURGE_CART_URI = "rest/default/V1/carts/mine/items/{}"
 
+
 # Magento API call wrapper : catch 401 and try to recover it by refreshing the auth token
 def __magento_client__(retry_interval=1, max_retry=1, fallback_return=None):
     def decorator(func):
@@ -123,11 +124,10 @@ class MagentoClient:
 
         return item_added
 
-
     @__magento_client__(max_retry=3, fallback_return=0)
     def purge_cart(self):
 
-        # First we need to get a the cart id to be able to insert items into it
+        # First we need to get a the cart' items to be able to delete each of them
         cart_response = requests.get(
             url=self.__build_url(GET_CART_URI),
             headers=self.__auth_header()
