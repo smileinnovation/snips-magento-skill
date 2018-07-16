@@ -5,6 +5,7 @@ CLIENT_TOKEN_URI = "rest/V1/integration/customer/token"
 GET_CART_URI = "rest/default/V1/carts/mine"
 GET_CART_ITEM_URI = "rest/default/V1/carts/mine/items"
 ADD_TO_CART_URI = "rest/default/V1/carts/mine/items"
+PURGE_CART_URI = "rest/default/V1/carts/mine/items/{}"
 
 # Magento API call wrapper : catch 401 and try to recover it by refreshing the auth token
 def __magento_client__(retry_interval=1, max_retry=1, fallback_return=None):
@@ -44,10 +45,12 @@ class MagentoStockIssueError(Exception):
 
 
 class MagentoClient:
-    def __init__(self, host, login, password):
+    def __init__(self, host, login, password, admin="", admin_password=""):
         self.__host = host
         self.__login = login
         self.__password = password
+        self.__admin = admin
+        self.__admin_password = admin_password
         self.__get_client_token()
 
     @staticmethod
@@ -119,6 +122,22 @@ class MagentoClient:
             item_added = item_added + 1
 
         return item_added
+
+
+    @__magento_client__(max_retry=3, fallback_return=0)
+    def purge_cart(self):
+
+        # First we need to get a the cart id to be able to insert items into it
+        cart_response = requests.get(
+            url=self.__build_url(GET_CART_URI),
+            headers=self.__auth_header()
+        )
+        cart = MagentoClient.__process_response(cart_response)
+        cart_id = cart['id']
+        cart_items = cart['items']
+        print cart_id
+        print cart_items
+
 
     @__magento_client__(max_retry=3, fallback_return="")
     def get_order_status(self):
