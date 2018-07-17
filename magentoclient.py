@@ -5,7 +5,7 @@ CLIENT_TOKEN_URI = "rest/V1/integration/customer/token"
 GET_CART_URI = "rest/default/V1/carts/mine"
 GET_CART_ITEM_URI = "rest/default/V1/carts/mine/items"
 ADD_TO_CART_URI = "rest/default/V1/carts/mine/items"
-PURGE_CART_URI = "rest/default/V1/carts/mine/items/{}"
+DELETE_ITEM_URI = "rest/default/V1/carts/mine/items/{}"
 
 
 # Magento API call wrapper : catch 401 and try to recover it by refreshing the auth token
@@ -133,11 +133,16 @@ class MagentoClient:
             headers=self.__auth_header()
         )
         cart = MagentoClient.__process_response(cart_response)
-        cart_id = cart['id']
         cart_items = cart['items']
-        print cart_id
-        print cart_items
 
+        def remove_item(item_id):
+            return requests.delete(
+                url=self.__build_url(DELETE_ITEM_URI.format(item_id)),
+                headers=self.__auth_header()
+            )
+
+        results = map(lambda i: MagentoClient.__process_response(remove_item(i['item_id'])), cart_items)
+        return len(results)
 
     @__magento_client__(max_retry=3, fallback_return="")
     def get_order_status(self):

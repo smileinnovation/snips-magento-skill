@@ -89,6 +89,7 @@ def _product_name_by_sku(sku):
     except KeyError:
         return None
 
+
 class MagentoSkill:
     def __init__(self, magento_client):
         self.messages = Message(SKILL_MESSAGES, 'fr')
