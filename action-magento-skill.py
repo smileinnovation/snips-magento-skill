@@ -36,8 +36,7 @@ SKILL_MESSAGES = {
             "Puis-je vous aider pour autre chose ?"
         ],
         'bye': [
-            "à bientôt",
-            "Au revoir, à bientôt"
+            "à bientôt"
         ],
         'unknownSmallTalk': [
             "Je ne suis pas sur de vous avoir compris... "
@@ -64,7 +63,9 @@ SKILL_MESSAGES = {
         'protegecahier': "Protège-cahier transparent vert",
         'encre': "étui de 24 cartouches d'encre noire",
         'stylo': "Stylo bille noire",
-        'unknown_product': "produit que je ne connais pas"
+        'unknown_product': "produit que je ne connais pas",
+        'order_status': 'Le status de votre dernière commande est celui-ci : {}',
+        'unknown_status': 'inconnus'
     }
 }
 
@@ -73,6 +74,19 @@ PRODUCTS = {
     '3086126732343': 'encre',
     '0073228109695': 'stylo',
     '3210330734057': 'protegecahier'
+}
+
+ORDER_STATUS = {
+    'canceled':'annulée',
+    'closed':'fermée',
+    'complete':'terminée',
+    'holded':'en suspend',
+    'payment_review':'en cours de validation paiement',
+    'paypal_reversed':'annulation paypal',
+    'pending': "en cours de préparation",
+    'pending_payment':'en attente de paiement',
+    'pending_paypal':'en attente de confirmation paypal',
+    'processing':'en cours de traitement'
 }
 
 ACTION_ADD_ITEMS = "__add_items"
@@ -86,6 +100,13 @@ def _product_sku_by_name(name):
 def _product_name_by_sku(sku):
     try:
         return PRODUCTS[sku]
+    except KeyError:
+        return None
+
+
+def _status_name(status):
+    try:
+        return ORDER_STATUS[status]
     except KeyError:
         return None
 
@@ -177,7 +198,17 @@ class MagentoSkill:
             self.loop_new_question(hermes)
 
     def order_status(self, hermes, intent_message):
-        hermes.publish_end_session(intent_message.session_id, "Je ne vois aucune commande pour le moment")
+
+        orders = self.__magento_client.get_orders()
+
+        if len(orders) > 0:
+            status = orders[0]['status']
+            status_name = _status_name(status)
+            if status_name is None:
+                status_name = self.messages.get('unknown_status')
+            hermes.publish_end_session(intent_message.session_id, self.messages.get('order_status').format(status_name))
+        else:
+            hermes.publish_end_session(intent_message.session_id, "Je ne vois aucune commande pour le moment")
 
         self.loop_new_question(hermes)
 
@@ -248,16 +279,17 @@ if __name__ == "__main__":
             magento_user = config['secret']['magento_user']
             magento_password = config['secret']['magento_password']
 
-            # UGLY... but Magento API is so stupid, that so far to retrieve order status I need admin credential.
+            # THIS IS UGLY AND DANGEROUS... A MAGENTO CUSTOM API SHOULD EXISTS TO AVOID THIS !!! THIS IS FOR DEMO PURPOSE ONLY!!!
+            # but Magento API is so stupid, that so far to retrieve order status I need admin credential.
             # Next release of our Magento Showroom instance will include custom API for such requests
             magento_admin = config['secret']['magento_admin']
             magento_admin_password = config['secret']['magento_admin_password']
+            # .................................................................................................
 
             if magento_host is not None and magento_user is not None and magento_password is not None:
-                magento_client = MagentoClient(host=magento_host, login=magento_user, password=magento_password)
+                magento_client = MagentoClient(host=magento_host, login=magento_user, password=magento_password, admin=magento_admin, admin_password=magento_admin_password)
                 magentoSkill = MagentoSkill(magento_client)
                 magentoSkill.start()
-
             else:
                 print "Invalid configuration file (magento connection information are missing)."
 
